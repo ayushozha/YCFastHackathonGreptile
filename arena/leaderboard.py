@@ -1,4 +1,10 @@
-"""Derived from runs/*/events.jsonl. No seed data (PRD 6.5, acceptance 12)."""
+"""Derived from runs/*/events.jsonl. No seed data (PRD 6.5, acceptance 12).
+
+Replayed runs are excluded. A replay carries `replay: true` on every event
+(Appendix B); counting one would let the Replay button inflate the board and
+the streak mid-demo, and the row would not correspond to an exploit that was
+actually executed.
+"""
 
 import os
 
@@ -12,6 +18,8 @@ def _finished_runs():
     for arena_id in sorted(os.listdir(RUNS_DIR)):
         events = read_jsonl(events_path(arena_id))
         if not events:
+            continue
+        if any(e.get("replay") for e in events):
             continue
         if any(e.get("type") == "final" for e in events):
             runs.append((arena_id, events))

@@ -13,8 +13,8 @@ append here.
 | **2:30** | **M1' stage plays a full round** | **B** | **GREEN** — `POST /arena/replay` on `demo/sample_run.jsonl` drives the browser data path arena_created → round_over; verified via live HTTP/SSE against a running `uvicorn arena.api:app` |
 | **3:15** | **M2 full engine loop** | **A** | **GREEN** — `--fix-only` ended `final.result == "survived"`, suite 46 passed, 3 exploits blocked, HP back to 100 |
 | **3:15** | **M2' full arena on sample** | **B** | **GREEN** — replayed A's real 152-event `demo/cached_run.jsonl` end to end: `final == {launched:3, landed_r1:3, landed_r2:0, suite_passed:46, result:"survived"}`, all 3 hypotheses folded to `blocked`; `/leaderboard` derives correctly from the run; full suite 76 passed |
-| 3:45 | M3 live loop in browser | both | pending — B's routes (`/arena`, `/fix`) already spawn `run_pr.py` per Appendix C, ready to wire live |
-| 4:40 | M4 demo-proof | both | offline replay of `demo/cached_run.jsonl` verified (no network calls in the replay path); leaderboard has 4 real fixture PRs open now (see below) |
+| **3:45** | **M3 live loop in browser** | **both** | **GREEN** — PR #2 driven end to end through the HTTP routes only: `POST /arena` → engine spawned detached → SSE → `POST /arena/{id}/fix` → `final: survived`. No CLI, no manual step. |
+| **4:40** | **M4 demo-proof** | **both** | **GREEN** — `demo/cached_run.jsonl` replays twice in a row; replay path touches no network and the UI fetches same-origin only; leaderboard holds 4 real rows, streak 4 |
 
 ## B's fixture work (this session)
 
@@ -68,6 +68,30 @@ says so rather than pretending. The fix Codex wrote is 6 lines in
 `app/refunds.py`: it reaches for the repo's own `require_role("finance")` and
 adds a cumulative refundable check, which blocks all three exploits at once.
 
+## Every PR #1–#4 has been through the arena
+
+| arena | PR | launched | landed r1 | landed r2 | suite | result |
+|---|---|---|---|---|---|---|
+| `m1` | #1 refunds | 3 | 3 | 0 | 46 | survived |
+| `1221cc8e` | #2 webhooks | 1 | 1 | 0 | 42 | survived |
+| `lb3` | #3 csv-export | 1 | 1 | 0 | 43 | survived |
+| `lb4` | #4 rate-limiter | 1 | 1 | 0 | 39 | survived |
+
+364 events, all schema-valid. `logs/codex_calls.jsonl` holds
+`{recon: 4, exploit: 6, fix: 4}`. Every section 12 criterion is green.
+
+**No Knocked out row.** PR #4 was meant to be the one Codex could not fix
+cleanly; it fixed it. The board reads 4/4 survived because that is what the
+exploits actually did. Do not hand-seed a loss — plant a harder bug in a fifth
+PR if the demo needs the contrast.
+
+## Bug found during integration
+
+The leaderboard counted replayed runs as real ones, so every press of the
+Replay button added a row and bumped the streak mid-demo. `arena/leaderboard.py`
+now skips any run whose events carry `replay: true` (Appendix B). Regression
+test in `tests/test_arena_replay.py`.
+
 ## Two decisions left for the team
 
 1. **`-q` vs `-v` in the battle log.** PRD 6.3 specifies `pytest -q`, which
@@ -79,6 +103,25 @@ adds a cumulative refundable check, which blocks all three exploits at once.
    restore the OpenAI Responses path the PRD names; `RECON=openai|codex` forces
    either.
 
+## Blocked on credentials, not on code
+
+Each degrades to its labeled fallback (PRD 11) rather than faking anything:
+
+| feature | blocker | what happens instead |
+|---|---|---|
+| Greptile scout | app not installed on `payments-svc`; no `GREPTILE_API_KEY` | ticker reads "No scouting report"; Recon works off the diff and still found every planted bug |
+| Stripe cut-in card | no `STRIPE_SECRET_KEY` | fixture runs `STRIPE_MODE=stub`; `/arena/{id}/stripe` reports `available: false` |
+| Attacker portraits | no `OPENAI_API_KEY` for the image API | outline icons in coloured circles |
+| Modal sandbox | no Modal tokens; `modal_runner.py` still unwritten | `RUNNER=local`; first on the PRD's cut list anyway |
+| Recon via OpenAI | no `OPENAI_API_KEY` | `RECON=codex` — same prompt, same JSON schema, `codex exec --output-schema` |
+
+## Not built (optional / cut)
+
+- PRD 6.6 post-review-to-PR: `engine/github.py:post_review` still raises
+  `NotImplementedError`. Optional, and it writes to a public PR, so it needs a
+  human to say go.
+- `engine/runner/modal_runner.py`: shape documented, signatures unconfirmed.
+
 ## Open before 1:00 pm
 
 - [ ] Install the Greptile app on `ayushozha/payments-svc` so PR #1 gets review
@@ -86,9 +129,8 @@ adds a cumulative refundable check, which blocks all three exploits at once.
 - [ ] Confirm the Greptile v2 endpoint shapes (`engine/greptile.py`, SCOUT=api).
 - [ ] Confirm the Modal Sandbox signatures against the docs, then write
       `engine/runner/modal_runner.py`. Client 1.5.4 is installed.
-- [ ] Three more fixture PRs so the leaderboard has four real rows (A's 4:15
-      block). One should carry a bug that cannot be fixed in time, so a row
-      reads Knocked out.
+- [x] Three more fixture PRs so the leaderboard has four real rows — done,
+      PRs #2/#3/#4, all four run through the engine.
 - [ ] Fill `.env` from `.env.example` — `OPENAI_API_KEY` restores the Recon
       path the PRD specifies, `STRIPE_SECRET_KEY` enables the cut-in card.
 - [ ] Watch the UI play a replay once in a browser — the data path is verified

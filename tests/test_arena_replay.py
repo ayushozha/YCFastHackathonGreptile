@@ -98,3 +98,26 @@ def test_leaderboard_skips_unfinished_runs(tmp_path, monkeypatch):
     events = [e for e in read_sample() if e["type"] != "final"]
     (d / "events.jsonl").write_text("\n".join(json.dumps(e) for e in events))
     assert leaderboard_mod.leaderboard()["prs"] == []
+
+
+def test_leaderboard_excludes_replayed_runs(tmp_path, monkeypatch):
+    """The Replay button must not inflate the board mid-demo (Appendix B)."""
+    runs = tmp_path / "runs"
+    monkeypatch.setattr(paths, "RUNS_DIR", str(runs))
+    monkeypatch.setattr(leaderboard_mod, "RUNS_DIR", str(runs))
+
+    real = runs / "real"
+    real.mkdir(parents=True)
+    (real / "events.jsonl").write_text(
+        "\n".join(json.dumps(e) for e in read_sample())
+    )
+    replayed = runs / "replayed"
+    replayed.mkdir(parents=True)
+    (replayed / "events.jsonl").write_text(
+        "\n".join(json.dumps(dict(e, replay=True)) for e in read_sample())
+    )
+
+    board = leaderboard_mod.leaderboard()
+    assert len(board["prs"]) == 1
+    assert board["prs"][0]["arena_id"] == "real"
+    assert board["streak"] == 1
