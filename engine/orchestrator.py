@@ -235,7 +235,8 @@ def _fix_with_retry(emit, runner, wd, attempts=2):
             )
         out = codex.exec(prompt, wd, kind="fix")
 
-        files = codex.parse_file_summaries(out["stdout"])
+        files = codex.parse_file_summaries(out.get("last_message")) or \
+            codex.parse_file_summaries(out["stdout"])
         if not files:
             files = [{"path": l, "summary": ""} for l in github.diff_stat(wd)]
         emit("fix_diff", files=files)

@@ -93,3 +93,36 @@ def test_every_documented_event_type_has_a_schema_entry():
         "blocked", "still_landed", "final", "error",
     }
     assert set(EVENT_SCHEMA) == documented
+
+
+# ---- codex stdout parsing (fix prompt A.3 asks for `<path>  <summary>`) ----
+
+@pytest.mark.parametrize("line,expected", [
+    ("app/refunds.py  guard on payment.refunded", "app/refunds.py"),
+    ("main.py  added the ownership check", "main.py"),
+    ("app/refunds.py:  clamp the amount", "app/refunds.py"),
+])
+def test_parse_file_summaries_finds_changed_files(line, expected):
+    from engine.codex import parse_file_summaries
+
+    assert parse_file_summaries(line) == [
+        {"path": expected, "summary": line.split(None, 1)[1].strip()}
+    ]
+
+
+@pytest.mark.parametrize("line", [
+    "Here is what I changed:",
+    "I updated the refund handler so that it works",
+    "",
+])
+def test_parse_file_summaries_ignores_prose(line):
+    from engine.codex import parse_file_summaries
+
+    assert parse_file_summaries(line) == []
+
+
+def test_codex_flags_match_the_installed_cli():
+    """Read off `codex exec --help`, not guessed (PRD section 9)."""
+    from engine.codex import CODEX_FLAGS
+
+    assert "--sandbox" in CODEX_FLAGS and "workspace-write" in CODEX_FLAGS

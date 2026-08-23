@@ -4,22 +4,25 @@ Rule 0.1: every runtime codex invocation is logged to logs/codex_calls.jsonl
 with prompt, exit code and duration. Acceptance criterion in section 12 greps
 this file for one exploit call per hypothesis and one fix call per run.
 
-TODO at 1:00 pm: run `codex --version` and `codex exec --help` on the build
-machine and set CODEX_FLAGS. Sandbox/approval flag names differ by version --
-do not guess them.
+Flags below were read off `codex exec --help` on the build machine, not guessed
+(codex-cli 0.149.0). Re-check them if the CLI is upgraded before the hack.
 """
 
 import json
 import os
 import subprocess
+import tempfile
 import time
 
 LOG_PATH = os.environ.get("CODEX_LOG", "logs/codex_calls.jsonl")
 TIMEOUT_S = 180  # PRD 9
 CODEX_BIN = os.environ.get("CODEX_BIN", "codex")
 
-# Verified against `codex exec --help` at 1:00 pm. Keep it minimal.
-CODEX_FLAGS = os.environ.get("CODEX_FLAGS", "").split()
+# `codex exec` is already non-interactive; workspace-write is what gives it
+# permission to create tests/exploits/ and edit app/ inside the clone. Plain
+# stdout (no --json) keeps the battle log verbatim and readable.
+DEFAULT_FLAGS = ["--sandbox", "workspace-write", "--color", "never"]
+CODEX_FLAGS = os.environ.get("CODEX_FLAGS", "").split() or DEFAULT_FLAGS
 
 
 def _log(record):
@@ -32,10 +35,15 @@ def _log(record):
 def exec(prompt, workdir, kind="exploit", timeout=TIMEOUT_S, on_line=None):
     """Run `codex exec` non-interactively with write access to workdir.
 
-    Returns {"exit_code", "stdout", "duration_ms", "timed_out"}.
+    Returns {"exit_code", "stdout", "last_message", "duration_ms", "timed_out"}.
     `on_line` is called with each stdout line so the caller can stream it.
+
+    `--output-last-message` gives us the agent's final message on its own,
+    which is what the fix prompt (A.3) asks to be one line per changed file.
     """
-    cmd = [CODEX_BIN, "exec", *CODEX_FLAGS, prompt]
+    last_fd, last_path = tempfile.mkstemp(prefix="codex_last_", suffix=".txt")
+    os.close(last_fd)
+    cmd = [CODEX_BIN, "exec", *CODEX_FLAGS, "--output-last-message", last_path, prompt]
     started = time.monotonic()
     timed_out = False
     lines = []
@@ -80,6 +88,16 @@ def exec(prompt, workdir, kind="exploit", timeout=TIMEOUT_S, on_line=None):
     duration_ms = int((time.monotonic() - started) * 1000)
     exit_code = 124 if timed_out else proc.returncode
     stdout = "\n".join(lines)
+    try:
+        with open(last_path, "r", encoding="utf-8", errors="replace") as fh:
+            last_message = fh.read()
+    except OSError:
+        last_message = ""
+    finally:
+        try:
+            os.unlink(last_path)
+        except OSError:
+            pass
     _log(
         {
             "kind": kind,
@@ -89,24 +107,27 @@ def exec(prompt, workdir, kind="exploit", timeout=TIMEOUT_S, on_line=None):
             "duration_ms": duration_ms,
             "timed_out": timed_out,
             "stdout_tail": stdout[-2000:],
+            "last_message": last_message[-2000:],
         }
     )
     return {
         "exit_code": exit_code,
         "stdout": stdout,
+        "last_message": last_message,
         "duration_ms": duration_ms,
         "timed_out": timed_out,
     }
 
 
-def parse_file_summaries(stdout):
+def parse_file_summaries(text):
     """Fix prompt (A.3) asks for one line per changed file: `<path>  <summary>`.
 
+    Pass the agent's last message when you have it; the whole stdout works too.
     Returns [{"path", "summary"}]; the orchestrator falls back to `git diff
     --stat` lines when this comes back empty (PRD 6.4).
     """
     files = []
-    for raw in stdout.splitlines():
+    for raw in (text or "").splitlines():
         line = raw.strip()
         if not line or line.startswith(("#", "$", ">")):
             continue
@@ -114,9 +135,25 @@ def parse_file_summaries(stdout):
         if len(parts) != 2:
             continue
         path, summary = parts
-        if "/" in path and path.endswith((".py", ".js", ".ts", ".go", ".rb")):
+        path = path.rstrip(":")
+        if _looks_like_a_path(path):
             files.append({"path": path, "summary": summary.strip()})
     return files
+
+
+SOURCE_SUFFIXES = (
+    ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rb", ".rs", ".java", ".php",
+    ".sql", ".html", ".css", ".toml", ".cfg", ".ini", ".json", ".yaml", ".yml",
+)
+
+
+def _looks_like_a_path(token):
+    """A top-level `main.py` is as valid a changed file as `app/refunds.py`."""
+    if token.endswith(":"):
+        token = token[:-1]
+    if token.endswith(SOURCE_SUFFIXES):
+        return True
+    return "/" in token and "." in token.rsplit("/", 1)[-1]
 
 
 def load_prompt(name, **fields):

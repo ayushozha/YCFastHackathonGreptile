@@ -48,9 +48,19 @@ engine  ->  runs/<arena_id>/events.jsonl  ->  arena
 Paths are disjoint. A conflict means someone edited the other's directory:
 revert and talk.
 
+## Toolchain
+
+Python **3.11** (`brew install python@3.11`) — the Modal image in PRD section 9
+pins 3.11, so keep the local interpreter matched. `requirements.txt` is pinned
+to versions verified on that interpreter.
+
 ## Before you touch anything with a TODO
 
-`engine/codex.py` (flag names), `engine/greptile.py` (SCOUT=api endpoints) and
-`engine/runner/modal_runner.py` (Sandbox API) all carry TODOs that say *confirm
-against the docs, do not guess*. That instruction is load-bearing — the flags
-and signatures differ by version.
+`engine/greptile.py` (SCOUT=api endpoints) and `engine/runner/modal_runner.py`
+(Sandbox API) carry TODOs that say *confirm against the docs, do not guess*.
+That instruction is load-bearing — the signatures differ by version.
+
+`engine/codex.py` is already resolved: `CODEX_FLAGS` is
+`--sandbox workspace-write --color never`, read off `codex exec --help` on
+codex-cli 0.149.0 and confirmed with a live call. Re-check it if the CLI is
+upgraded.

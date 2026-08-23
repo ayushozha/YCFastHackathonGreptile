@@ -23,11 +23,18 @@ ago no longer works.
 
 ## Run it
 
+Python 3.11 — the Modal image in PRD section 9 pins 3.11, so match it locally.
+
 ```bash
+brew install python@3.11
+python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env          # GITHUB_TOKEN, OPENAI_API_KEY, GREPTILE_API_KEY, ...
 make demo                     # arena on http://localhost:8000
 ```
+
+You also need `codex` on PATH (`brew install codex`) — the product shells out
+to `codex exec` at runtime for every exploit and every fix.
 
 Then paste a PR url and click **Enter the arena**, or click **Replay** to play
 a cached run with the network off.
