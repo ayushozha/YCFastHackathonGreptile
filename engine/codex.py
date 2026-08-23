@@ -24,6 +24,9 @@ CODEX_BIN = os.environ.get("CODEX_BIN", "codex")
 DEFAULT_FLAGS = ["--sandbox", "workspace-write", "--color", "never"]
 CODEX_FLAGS = os.environ.get("CODEX_FLAGS", "").split() or DEFAULT_FLAGS
 
+# Recon only reads; it must not be able to touch the clone.
+READONLY_FLAGS = ["--sandbox", "read-only", "--color", "never", "--skip-git-repo-check"]
+
 
 def _log(record):
     os.makedirs(os.path.dirname(LOG_PATH) or ".", exist_ok=True)
@@ -32,7 +35,8 @@ def _log(record):
         fh.flush()
 
 
-def exec(prompt, workdir, kind="exploit", timeout=TIMEOUT_S, on_line=None):
+def exec(prompt, workdir, kind="exploit", timeout=TIMEOUT_S, on_line=None,
+         extra_flags=None, output_schema=None):
     """Run `codex exec` non-interactively with write access to workdir.
 
     Returns {"exit_code", "stdout", "last_message", "duration_ms", "timed_out"}.
@@ -43,7 +47,14 @@ def exec(prompt, workdir, kind="exploit", timeout=TIMEOUT_S, on_line=None):
     """
     last_fd, last_path = tempfile.mkstemp(prefix="codex_last_", suffix=".txt")
     os.close(last_fd)
-    cmd = [CODEX_BIN, "exec", *CODEX_FLAGS, "--output-last-message", last_path, prompt]
+    schema_path = None
+    flags = list(extra_flags) if extra_flags else list(CODEX_FLAGS)
+    if output_schema is not None:
+        schema_fd, schema_path = tempfile.mkstemp(prefix="codex_schema_", suffix=".json")
+        with os.fdopen(schema_fd, "w", encoding="utf-8") as fh:
+            json.dump(output_schema, fh)
+        flags += ["--output-schema", schema_path]
+    cmd = [CODEX_BIN, "exec", *flags, "--output-last-message", last_path, prompt]
     started = time.monotonic()
     timed_out = False
     lines = []
@@ -94,10 +105,12 @@ def exec(prompt, workdir, kind="exploit", timeout=TIMEOUT_S, on_line=None):
     except OSError:
         last_message = ""
     finally:
-        try:
-            os.unlink(last_path)
-        except OSError:
-            pass
+        for path in (last_path, schema_path):
+            if path:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
     _log(
         {
             "kind": kind,

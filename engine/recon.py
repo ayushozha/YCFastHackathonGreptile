@@ -1,6 +1,15 @@
 """Recon: diff + scout report + conventions -> 1..4 attack hypotheses (PRD 6.2).
 
-One OpenAI Responses API call, JSON enforced, prompt in prompts/recon.txt.
+Primary path is the one the PRD names: a single OpenAI Responses API call with
+the JSON schema enforced, prompt in prompts/recon.txt.
+
+`RECON=codex` is the labeled fallback for a machine with no OPENAI_API_KEY.
+It runs the same prompt and the same schema through `codex exec
+--output-schema`, read-only so it cannot touch the clone. Same model family,
+same enforced shape, different transport -- and it keeps the run honest when
+the key is missing rather than stubbing the stage (PRD rule 0.5).
+
+Which path ran is reported in the `source` field so the ticker can say so.
 """
 
 import json
@@ -10,6 +19,14 @@ from shared.schema import ATTACKERS, validate_hypothesis
 
 MODEL = os.environ.get("RECON_MODEL", "gpt-5")
 MAX_HYPOTHESES = 4
+
+
+def backend():
+    """openai | codex. Explicit RECON wins; otherwise the key decides."""
+    choice = os.environ.get("RECON", "").strip().lower()
+    if choice in ("openai", "codex"):
+        return choice
+    return "openai" if os.environ.get("OPENAI_API_KEY") else "codex"
 
 HYPOTHESIS_JSON_SCHEMA = {
     "type": "object",
@@ -60,15 +77,59 @@ def build_user_input(diff, scout_report, conventions, max_diff_chars=40000):
     return "\n".join(lines)
 
 
-def hypotheses(diff, scout_report, conventions):
-    """Returns a validated list of 1..4 hypotheses."""
+def hypotheses(diff, scout_report, conventions, workdir="."):
+    """Returns (validated hypotheses, backend name)."""
+    user_input = build_user_input(diff, scout_report, conventions)
+    if backend() == "codex":
+        return normalize(_via_codex(user_input, workdir)), "codex"
+    return normalize(_via_openai(user_input)), "openai"
+
+
+def _via_codex(user_input, workdir):
+    """codex exec with --output-schema: same prompt, same enforced shape."""
+    from engine import codex
+
+    prompt = (
+        _system_prompt()
+        + "\n\nReturn ONLY the JSON object. Do not read or write any files;"
+        " everything you need is below.\n\n"
+        + user_input
+    )
+    out = codex.exec(
+        prompt,
+        workdir,
+        kind="recon",
+        timeout=240,
+        extra_flags=codex.READONLY_FLAGS,
+        output_schema=HYPOTHESIS_JSON_SCHEMA,
+    )
+    if out["exit_code"] != 0:
+        raise RuntimeError(f"recon via codex failed (exit {out['exit_code']})")
+    return _extract(out["last_message"]).get("hypotheses", [])
+
+
+def _extract(text):
+    """The last message should be the JSON object; be forgiving about fences."""
+    text = (text or "").strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1].rsplit("```", 1)[0]
+    try:
+        return json.loads(text)
+    except ValueError:
+        start, end = text.find("{"), text.rfind("}")
+        if start == -1 or end <= start:
+            raise ValueError(f"recon returned no JSON object: {text[:300]!r}")
+        return json.loads(text[start : end + 1])
+
+
+def _via_openai(user_input):
     from openai import OpenAI
 
     client = OpenAI()
     resp = client.responses.create(
         model=MODEL,
         instructions=_system_prompt(),
-        input=build_user_input(diff, scout_report, conventions),
+        input=user_input,
         text={
             "format": {
                 "type": "json_schema",
@@ -78,8 +139,7 @@ def hypotheses(diff, scout_report, conventions):
             }
         },
     )
-    data = json.loads(resp.output_text)
-    return normalize(data.get("hypotheses", []))
+    return json.loads(resp.output_text).get("hypotheses", [])
 
 
 def normalize(raw):

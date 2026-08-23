@@ -6,6 +6,8 @@ is the event file plus the CLI in Appendix C.
 """
 
 import os
+import shlex
+import sys
 import time
 
 from engine import codex, github, greptile, recon
@@ -19,12 +21,31 @@ from engine.runner.base import DEFAULT_TIMEOUT, get_runner
 from shared.schema import STARTING_HP, damage_for
 
 EXPLOIT_DIR = "tests/exploits"
-SUITE_CMD = "python -m pytest tests -q --ignore=tests/exploits -p no:cacheprovider"
-EXPLOITS_CMD = "python -m pytest tests/exploits -q -p no:cacheprovider"
+
+# Bare `python` is not on PATH on a stock macOS box, and the arena spawns the
+# engine with its own interpreter -- so resolve pytest through the interpreter
+# that is actually running us. PYTEST_PYTHON overrides it for the case where
+# the clone needs a different environment than the engine.
+PYTEST_PYTHON = os.environ.get("PYTEST_PYTHON", sys.executable)
+
+# PRD 6.3 specifies -q. Note the tension with the demo script in PRD section 2,
+# which says the judge sees `PASSED` in the battle log -- `-q` prints `.` and
+# only `-v` prints `PASSED`. Left on the spec'd -q; flip with PYTEST_VERBOSITY=-v
+# if the team decides the demo beat wins. Either way the output is verbatim.
+PYTEST_VERBOSITY = os.environ.get("PYTEST_VERBOSITY", "-q")
+PYTEST_BASE = f"-m pytest {PYTEST_VERBOSITY} -p no:cacheprovider"
+
+
+def _pytest(target, extra=""):
+    return f"{shlex.quote(PYTEST_PYTHON)} {PYTEST_BASE} {extra} {target}".replace("  ", " ")
+
+
+SUITE_CMD = _pytest("tests", "--ignore=tests/exploits")
+EXPLOITS_CMD = _pytest(EXPLOIT_DIR)
 
 
 def exploit_cmd(path):
-    return f"python -m pytest {path} -q -p no:cacheprovider"
+    return _pytest(shlex.quote(path))
 
 
 # ---------------------------------------------------------------- stage 0..3
@@ -59,7 +80,9 @@ def run_attack(pr_url, arena_id, runner_name="local", scout_source="app"):
         # 6.2 recon
         diff = github.get_diff(owner, repo, number)
         conventions = github.read_conventions(wd)
-        hyps = recon.hypotheses(diff, report, conventions)
+        hyps, recon_backend = recon.hypotheses(diff, report, conventions, workdir=wd)
+        emit("index_status", source=f"recon-{recon_backend}", status="ready",
+             lines=len(diff.splitlines()), files=pr["files"])
         damages = damage_for(hyps)
         for h, dmg in zip(hyps, damages):
             h["damage"] = dmg

@@ -126,3 +126,111 @@ def test_codex_flags_match_the_installed_cli():
     from engine.codex import CODEX_FLAGS
 
     assert "--sandbox" in CODEX_FLAGS and "workspace-write" in CODEX_FLAGS
+
+
+# ---- CLI dispatch (Appendix C is the frozen interface B calls) ----
+
+def test_cli_attack_only(monkeypatch):
+    import scripts.run_pr as run_pr
+
+    seen = {}
+
+    def record(name):
+        def call(*a, **k):
+            seen[name] = (a, k)
+            return 0
+        return call
+
+    monkeypatch.setattr(run_pr.orchestrator, "run_attack", record("attack"))
+    monkeypatch.setattr(run_pr.orchestrator, "run_fix", record("fix"))
+    assert run_pr.main(["https://github.com/o/r/pull/1", "--arena-id", "x"]) == 0
+    assert "attack" in seen and "fix" not in seen
+
+
+def test_cli_fix_runs_both_stages(monkeypatch):
+    import scripts.run_pr as run_pr
+
+    order = []
+    monkeypatch.setattr(run_pr.orchestrator, "run_attack",
+                        lambda *a, **k: order.append("attack") or 0)
+    monkeypatch.setattr(run_pr.orchestrator, "run_fix",
+                        lambda *a, **k: order.append("fix") or 0)
+    assert run_pr.main(["https://github.com/o/r/pull/1", "--arena-id", "x", "--fix"]) == 0
+    assert order == ["attack", "fix"]
+
+
+def test_cli_fix_does_not_run_when_the_attack_round_errored(monkeypatch):
+    import scripts.run_pr as run_pr
+
+    order = []
+    monkeypatch.setattr(run_pr.orchestrator, "run_attack", lambda *a, **k: 1)
+    monkeypatch.setattr(run_pr.orchestrator, "run_fix",
+                        lambda *a, **k: order.append("fix") or 0)
+    assert run_pr.main(["https://github.com/o/r/pull/1", "--arena-id", "x", "--fix"]) == 1
+    assert order == []
+
+
+def test_cli_fix_only_skips_the_attack_round(monkeypatch):
+    import scripts.run_pr as run_pr
+
+    order = []
+    monkeypatch.setattr(run_pr.orchestrator, "run_attack",
+                        lambda *a, **k: order.append("attack") or 0)
+    monkeypatch.setattr(run_pr.orchestrator, "run_fix",
+                        lambda *a, **k: order.append("fix") or 0)
+    assert run_pr.main(["--arena-id", "x", "--fix-only"]) == 0
+    assert order == ["fix"]
+
+
+def test_cli_rejects_fix_only_with_a_pr_url():
+    import scripts.run_pr as run_pr
+
+    with pytest.raises(SystemExit):
+        run_pr.main(["https://github.com/o/r/pull/1", "--arena-id", "x", "--fix-only"])
+
+
+def test_cli_requires_a_pr_url_for_an_attack_round():
+    import scripts.run_pr as run_pr
+
+    with pytest.raises(SystemExit):
+        run_pr.main(["--arena-id", "x"])
+
+
+# ---- pytest commands must not depend on a bare `python` being on PATH ----
+
+def test_pytest_commands_use_a_real_interpreter():
+    from engine.orchestrator import SUITE_CMD, EXPLOITS_CMD, exploit_cmd
+
+    for cmd in (SUITE_CMD, EXPLOITS_CMD, exploit_cmd("tests/exploits/test_a.py")):
+        assert not cmd.startswith("python "), "bare `python` is not on PATH on macOS"
+        assert "-m pytest" in cmd and "-p no:cacheprovider" in cmd
+    assert "--ignore=tests/exploits" in SUITE_CMD
+
+
+# ---- recon backend selection (PRD rule 0.5: labeled fallback, never a stub) ----
+
+@pytest.mark.parametrize("env,expected", [
+    ({"OPENAI_API_KEY": "sk-x"}, "openai"),
+    ({}, "codex"),
+    ({"OPENAI_API_KEY": "sk-x", "RECON": "codex"}, "codex"),
+    ({"RECON": "openai"}, "openai"),
+])
+def test_recon_backend_selection(monkeypatch, env, expected):
+    from engine import recon
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("RECON", raising=False)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    assert recon.backend() == expected
+
+
+@pytest.mark.parametrize("text", [
+    '{"hypotheses": []}',
+    '```json\n{"hypotheses": []}\n```',
+    'Here is the result: {"hypotheses": []} -- done',
+])
+def test_recon_extracts_json_from_a_final_message(text):
+    from engine.recon import _extract
+
+    assert _extract(text) == {"hypotheses": []}
