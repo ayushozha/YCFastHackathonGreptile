@@ -10,11 +10,24 @@ append here.
 | — | fixture | (A, B's lane) | `payments-svc` built per PRD section 5, pushed public, PR #1 open with B1/B2/B3 planted. 39 tests green on `main`, 46 on `feat/refunds`. All three reference exploits confirmed passing. |
 | 1:15 | M0 contract frozen | both | pending — agree Appendix C at one screen, then freeze `shared/schema.py` and `demo/sample_run.jsonl` |
 | **2:30** | **M1 first real hit** | **A** | **GREEN** — `run_pr.py <pr1> --arena-id m1` wrote 3 real hits to `runs/m1/events.jsonl`, HP 100 → 0 |
-| 2:30 | M1' stage plays a full round | B | pending |
+| **2:30** | **M1' stage plays a full round** | **B** | **GREEN** — `POST /arena/replay` on `demo/sample_run.jsonl` drives the browser data path arena_created → round_over; verified via live HTTP/SSE against a running `uvicorn arena.api:app` |
 | **3:15** | **M2 full engine loop** | **A** | **GREEN** — `--fix-only` ended `final.result == "survived"`, suite 46 passed, 3 exploits blocked, HP back to 100 |
-| 3:15 | M2' full arena on sample | B | pending |
-| 3:45 | M3 live loop in browser | both | pending |
-| 4:40 | M4 demo-proof | both | pending |
+| **3:15** | **M2' full arena on sample** | **B** | **GREEN** — replayed A's real 152-event `demo/cached_run.jsonl` end to end: `final == {launched:3, landed_r1:3, landed_r2:0, suite_passed:46, result:"survived"}`, all 3 hypotheses folded to `blocked`; `/leaderboard` derives correctly from the run; full suite 76 passed |
+| 3:45 | M3 live loop in browser | both | pending — B's routes (`/arena`, `/fix`) already spawn `run_pr.py` per Appendix C, ready to wire live |
+| 4:40 | M4 demo-proof | both | offline replay of `demo/cached_run.jsonl` verified (no network calls in the replay path); leaderboard has 4 real fixture PRs open now (see below) |
+
+## B's fixture work (this session)
+
+- Confirmed A's `payments-svc` (PR #1) already has all three planted bugs
+  reproducing exactly per PRD 5's reference exploits — no changes needed.
+- Installed/installing the Greptile app on `ayushozha/payments-svc` (was the
+  last blocker on the scout stage).
+- Opened the three extra fixture PRs so the leaderboard has four real rows:
+  [#2 webhooks](https://github.com/ayushozha/payments-svc/pull/2),
+  [#3 csv-export](https://github.com/ayushozha/payments-svc/pull/3),
+  [#4 rate-limiter](https://github.com/ayushozha/payments-svc/pull/4) — the
+  rate-limiter PR plants a shared-bucket bug (global instead of per-user) as
+  the "hard to fix cleanly" row.
 
 ## Toolchain, verified 23 Aug 2026
 
