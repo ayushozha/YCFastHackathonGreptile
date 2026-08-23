@@ -1,0 +1,14 @@
+.env
+.venv/
+venv/
+
+# runtime data: the event bus, clones, codex call log
+runs/*
+!runs/.gitkeep
+logs/*
+!logs/.gitkeep
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store

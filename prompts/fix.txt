@@ -1,0 +1,5 @@
+The files in tests/exploits/ are exploit tests that currently PASS because of bugs in the application.
+
+Fix the application so that every test in tests/exploits/ FAILS and every test under tests/ outside tests/exploits/ still PASSES. Make the minimal change. Follow the repo's existing conventions (for example the require_role dependency used by admin routes, and the refundable limit on payments).
+
+Do not edit anything under tests/. When finished, print exactly one line per changed file in the form: <path>  <one-line summary of the change>

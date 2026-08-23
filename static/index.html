@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Code Arena</title>
+<style>
+/* PRD section 8 style rules: flat colors only, no gradients or glows,
+   two font weights (400, 500), no text under 11px, terminal never hidden,
+   every animation under 400ms except the banner. */
+:root{
+  --bg:#191918; --panel:#232321; --stage:#2C2C2A; --line:#39392F;
+  --ink:#EDEDE8; --dim:#9A9A90; --teal:#2AA79B; --red:#D2504A;
+  --green:#4FA85E; --amber:#D99A2B; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:400 14px/1.45 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:1120px;margin:0 auto;padding:16px}
+button{font:500 13px/1 inherit;color:var(--ink);background:var(--panel);
+  border:1px solid var(--line);border-radius:8px;padding:10px 14px;cursor:pointer}
+button:hover{background:#2b2b28}
+button.primary{background:var(--teal);border-color:var(--teal);color:#0C1F1D}
+button:disabled{opacity:.45;cursor:not-allowed}
+input{font:400 13px/1 inherit;color:var(--ink);background:#131312;
+  border:1px solid var(--line);border-radius:8px;padding:11px 12px;flex:1;min-width:240px}
+
+/* 1. top bar */
+.topbar{display:flex;align-items:center;gap:12px;padding:6px 2px 14px}
+.brand{font-weight:500;font-size:16px;display:flex;align-items:center;gap:8px}
+.crumb{color:var(--dim);font-size:12px}
+.streak{margin-left:auto;color:var(--amber);font-size:12px;font-weight:500}
+.tag{font-size:11px;color:var(--dim);border:1px solid var(--line);
+  border-radius:6px;padding:2px 6px}
+
+/* 2. stage */
+.stage{position:relative;height:300px;background:var(--stage);border-radius:12px;
+  display:flex;overflow:hidden;opacity:0;transition:opacity 300ms}
+.stage.on{opacity:1}
+.stage.shake{animation:shake 300ms}
+@keyframes shake{0%,100%{transform:translate(0,0)}
+  25%{transform:translate(-5px,2px)}50%{transform:translate(4px,-3px)}
+  75%{transform:translate(-3px,-1px)}}
+
+.pr{flex:1;padding:22px 24px;display:flex;flex-direction:column;gap:10px;
+  transform:translateX(-24px);opacity:0;transition:transform 300ms,opacity 300ms}
+.pr.in{transform:none;opacity:1}
+.shield{width:56px;height:56px;border-radius:50%;background:var(--teal);
+  display:flex;align-items:center;justify-content:center;font-weight:500;
+  color:#0C1F1D;font-size:15px}
+.pr h2{margin:0;font-size:17px;font-weight:500}
+.pr .meta{color:var(--dim);font-size:12px}
+.hpline{display:flex;justify-content:space-between;font-size:12px;color:var(--dim)}
+.hpbar{height:12px;background:#1B1B1A;border-radius:6px;overflow:hidden}
+.hpfill{height:100%;width:100%;background:var(--red);transition:width 400ms}
+.hpfill.restored{background:var(--green)}
+
+.attackers{width:300px;padding:22px 22px 22px 0;display:flex;
+  flex-direction:column;justify-content:center;gap:12px}
+.atk{display:flex;align-items:center;gap:10px;transform:translateY(-16px);
+  opacity:0;transition:transform 300ms,opacity 300ms}
+.atk.in{transform:none;opacity:1}
+.atk .portrait{width:38px;height:38px;border-radius:50%;background:#3A3A36;
+  display:flex;align-items:center;justify-content:center;font-size:17px;flex:0 0 38px}
+.atk .portrait img{width:100%;height:100%;border-radius:50%;display:block}
+.atk .name{font-size:13px;font-weight:500;flex:1}
+.atk .floor{height:3px;border-radius:2px;background:transparent;
+  width:38px;margin-top:4px;transition:background 200ms}
+.atk .floor.lit{background:var(--teal)}
+.pill{font-size:11px;padding:3px 8px;border-radius:999px;background:#33332F;color:var(--dim)}
+.pill.running{background:#33332F;color:var(--ink)}
+.pill.hit{background:var(--red);color:#fff}
+.pill.missed{background:#3A3A36;color:var(--dim)}
+.pill.blocked{background:var(--green);color:#08210E}
+.pill.still{background:var(--red);color:#fff}
+
+.projectile{position:absolute;width:10px;height:10px;border-radius:50%;
+  background:var(--red);opacity:0;pointer-events:none}
+.damage{position:absolute;font-weight:500;font-size:22px;color:var(--red);opacity:0;
+  pointer-events:none}
+.banner{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:26px;font-weight:500;background:rgba(25,25,24,.82);opacity:0;
+  pointer-events:none;transition:opacity 200ms}
+.banner.on{opacity:1}
+.ticker{position:absolute;left:0;right:0;bottom:0;padding:7px 14px;font:400 11px/1.4 var(--mono);
+  color:var(--dim);background:#242422;border-top:1px solid var(--line);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* 3. controls */
+.controls{display:flex;gap:10px;align-items:center;margin:14px 0;flex-wrap:wrap}
+
+/* 4. two columns */
+.cols{display:grid;grid-template-columns:1fr 340px;gap:14px}
+@media (max-width:900px){.cols{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.panel h3{margin:0;padding:11px 14px;font-size:12px;font-weight:500;color:var(--dim);
+  border-bottom:1px solid var(--line)}
+#log{margin:0;padding:12px 14px;height:320px;overflow:auto;font:400 12px/1.55 var(--mono);
+  white-space:pre-wrap;word-break:break-word}
+#log .sys{color:var(--teal)}
+#log .err{color:var(--red)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-weight:500;color:var(--dim);font-size:11px;padding:8px 14px}
+td{padding:7px 14px;border-top:1px solid var(--line)}
+.res-survived{color:var(--green)}
+.res-knocked_out{color:var(--red)}
+
+/* 5. victory card */
+.victory{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:16px;margin:14px 0;display:none}
+.victory.on{display:block}
+.counts{display:flex;gap:26px;flex-wrap:wrap;margin-bottom:12px}
+.counts div span{display:block;font-size:26px;font-weight:500}
+.counts div small{font-size:11px;color:var(--dim)}
+.cutin{margin-top:10px;font:400 12px/1.5 var(--mono);color:var(--dim)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- 1. top bar -->
+  <div class="topbar">
+    <div class="brand"><span>⚔️</span><span>Code Arena</span></div>
+    <div class="crumb" id="crumb">no arena</div>
+    <span class="tag" id="replayTag" style="display:none">Replay</span>
+    <div class="streak" id="streak">🔥 0</div>
+  </div>
+
+  <!-- 2. stage -->
+  <div class="stage" id="stage">
+    <div class="pr" id="prPanel">
+      <div class="shield" id="shield">PR</div>
+      <h2 id="prTitle">Waiting for a PR</h2>
+      <div class="meta" id="prMeta">paste a pull request url below</div>
+      <div style="margin-top:auto">
+        <div class="hpline"><span>Health</span><span id="hpLabel">100</span></div>
+        <div class="hpbar"><div class="hpfill" id="hpFill"></div></div>
+      </div>
+    </div>
+    <div class="attackers" id="attackers"></div>
+    <div class="projectile" id="projectile"></div>
+    <div class="damage" id="damage"></div>
+    <div class="banner" id="banner"></div>
+    <div class="ticker" id="ticker">Ready</div>
+  </div>
+
+  <!-- 3. controls -->
+  <div class="controls" id="controls">
+    <input id="prUrl" placeholder="https://github.com/owner/payments-svc/pull/42">
+    <button class="primary" id="enterBtn">Enter the arena</button>
+    <button id="fixBtn" disabled>Fix and rematch</button>
+    <button id="replayBtn">Replay</button>
+  </div>
+
+  <!-- 5. victory card -->
+  <div class="victory" id="victory">
+    <h2 id="victoryTitle" style="margin:0 0 12px;font-size:18px;font-weight:500"></h2>
+    <div class="counts">
+      <div><span id="vLaunched">0</span><small>launched</small></div>
+      <div><span id="vR1">0</span><small>landed round 1</small></div>
+      <div><span id="vR2">0</span><small>landed round 2</small></div>
+      <div><span id="vSuite">0</span><small>suite passed</small></div>
+      <div><span id="vFiles">0</span><small>files changed</small></div>
+    </div>
+    <div class="controls" style="margin:0">
+      <button id="postBtn">Post review to PR</button>
+      <button id="diffBtn">Open diff</button>
+      <button id="againBtn">New arena</button>
+    </div>
+    <div class="cutin" id="cutin"></div>
+  </div>
+
+  <!-- 4. two columns -->
+  <div class="cols">
+    <div class="panel">
+      <h3>Battle log — verbatim subprocess output</h3>
+      <pre id="log"></pre>
+    </div>
+    <div class="panel">
+      <h3>PRs this week</h3>
+      <table><thead><tr><th>#</th><th>PR</th><th>Result</th><th>HP</th></tr></thead>
+        <tbody id="prBoard"><tr><td colspan="4" style="color:var(--dim)">no finished runs yet</td></tr></tbody></table>
+      <h3 style="border-top:1px solid var(--line)">Attackers</h3>
+      <table><thead><tr><th>Attacker</th><th>Hits / swings</th><th>Accuracy</th></tr></thead>
+        <tbody id="atkBoard"><tr><td colspan="3" style="color:var(--dim)">—</td></tr></tbody></table>
+    </div>
+  </div>
+</div>
+
+<script>
+// Every animation fires on an event. Nothing runs on a timer (PRD section 8).
+const $ = (id) => document.getElementById(id);
+const ICONS = {bug_hunter:"🪲", security:"🔒", ledger:"🪙"};
+const LABEL = {bug_hunter:"Bug hunter", security:"Security", ledger:"Ledger"};
+
+let arenaId = null, es = null, hyp = {}, prUrlSeen = "", sawHit = false;
+
+function ticker(t){ $("ticker").textContent = t; }
+function log(line, cls){
+  const el = $("log"), span = document.createElement("span");
+  span.textContent = line + "\n";
+  if (cls) span.className = cls;
+  el.appendChild(span);
+  el.scrollTop = el.scrollHeight;
+}
+function banner(text, ms){          // the one animation allowed over 400ms
+  const b = $("banner");
+  b.textContent = text; b.classList.add("on");
+  setTimeout(() => b.classList.remove("on"), ms || 1100);
+}
+function setHp(hp, restored){
+  $("hpFill").style.width = Math.max(0, Math.min(100, hp)) + "%";
+  $("hpFill").classList.toggle("restored", !!restored);
+  $("hpLabel").textContent = hp;
+}
+function pill(id, text, cls){
+  const row = hyp[id]; if (!row) return;
+  row.pill.textContent = text;
+  row.pill.className = "pill " + (cls || "");
+}
+
+function addAttacker(h, damage){
+  const row = document.createElement("div");
+  row.className = "atk";
+  row.innerHTML =
+    '<div class="portrait"><img alt="" style="display:none"><span>' +
+      (ICONS[h.attacker] || "•") + '</span></div>' +
+    '<div><div class="name">' + (LABEL[h.attacker] || h.attacker) + '</div>' +
+    '<div class="floor"></div></div>' +
+    '<div class="pill">Ready</div>';
+  const img = row.querySelector("img");
+  img.onload = () => { img.style.display = "block"; img.nextElementSibling.style.display = "none"; };
+  img.src = "/static/portraits/" + h.attacker + ".png";   // fallback: the icon stays
+  $("attackers").appendChild(row);
+  hyp[h.id] = {el: row, pill: row.querySelector(".pill"),
+               floor: row.querySelector(".floor"), damage: damage, h: h};
+  requestAnimationFrame(() => row.classList.add("in"));
+}
+
+function projectile(id, land){
+  const row = hyp[id]; if (!row) return;
+  const stage = $("stage").getBoundingClientRect();
+  const from = row.el.getBoundingClientRect();
+  const to = $("shield").getBoundingClientRect();
+  const p = $("projectile");
+  const x0 = from.left - stage.left, y0 = from.top - stage.top + from.height / 2;
+  const x1 = to.left - stage.left + to.width / 2, y1 = to.top - stage.top + to.height / 2;
+  p.style.transition = "none";
+  p.style.transform = "translate(" + x0 + "px," + y0 + "px)";
+  p.style.opacity = "1";
+  requestAnimationFrame(() => {
+    p.style.transition = "transform 350ms linear, opacity 350ms";  // PRD: 350ms
+    const tx = land ? x1 : x0 + (x1 - x0) * 0.55;
+    p.style.transform = "translate(" + tx + "px," + y1 + "px)";
+    if (!land) p.style.opacity = "0";
+  });
+  setTimeout(() => { p.style.opacity = "0"; }, 360);
+}
+function damagePop(n){
+  const d = $("damage"), to = $("shield").getBoundingClientRect();
+  const stage = $("stage").getBoundingClientRect();
+  d.textContent = "-" + n;
+  d.style.transition = "none";
+  d.style.transform = "translate(" + (to.left - stage.left) + "px," + (to.top - stage.top - 10) + "px)";
+  d.style.opacity = "1";
+  requestAnimationFrame(() => {
+    d.style.transition = "transform 800ms, opacity 800ms";        // PRD: 800ms
+    d.style.transform = "translate(" + (to.left - stage.left) + "px," + (to.top - stage.top - 52) + "px)";
+    d.style.opacity = "0";
+  });
+}
+
+// ------------------------------------------------------- event -> animation
+function handle(e){
+  if (e.replay) $("replayTag").style.display = "inline-block";
+  switch (e.type){
+    case "arena_created": {
+      hyp = {}; sawHit = false; $("attackers").innerHTML = "";
+      $("stage").classList.add("on");
+      $("prPanel").classList.add("in");
+      $("shield").textContent = "#" + e.pr.number;
+      $("prTitle").textContent = e.pr.title;
+      $("prMeta").textContent = e.pr.author + " · " + e.pr.files + " files · +" + e.pr.additions;
+      $("crumb").textContent = e.repo + " · round " + e.round;
+      prUrlSeen = e.pr_url || "";
+      setHp(100, false);
+      ticker("Arena open — " + e.repo + " #" + e.pr.number);
+      log("$ arena " + e.arena_id + "  " + e.repo + " #" + e.pr.number, "sys");
+      break;
+    }
+    case "index_status":
+      ticker("Indexing with " + e.source + ": " + (e.lines ? e.lines.toLocaleString() + " lines" : e.status));
+      break;
+    case "scout_report":
+      ticker(e.items.length
+        ? "Scouting report (" + e.source + "): " + e.items.map(i => (i.path || "") + ":" + (i.line || "")).join("  ·  ")
+        : "No scouting report");
+      e.items.forEach(i => log("[scout] " + (i.path || "") + ":" + (i.line || "") + "  " + i.body, "sys"));
+      break;
+    case "attacker_intro":
+      addAttacker(e.hypothesis, e.damage);
+      log("[" + e.hypothesis.attacker + "] " + e.hypothesis.title + "  (-" + e.damage + ")", "sys");
+      break;
+    case "exploit_written":
+      pill(e.hypothesis_id, "Writing exploit", "running");
+      log("$ codex exec -> " + e.path, "sys");
+      setTimeout(() => pill(e.hypothesis_id, "Running", "running"), 250);
+      break;
+    case "sandbox_up":
+      if (hyp[e.hypothesis_id]) hyp[e.hypothesis_id].floor.classList.add("lit");
+      ticker("Modal sandbox " + e.sandbox_id + " up in " + e.boot_ms + " ms");
+      break;
+    case "test_output":
+      log(e.line);
+      if (e.line.trim()) ticker(e.line.trim());
+      break;
+    case "hit":
+      sawHit = true;
+      projectile(e.hypothesis_id, true);
+      setTimeout(() => {
+        damagePop(e.damage);
+        $("stage").classList.add("shake");
+        setTimeout(() => $("stage").classList.remove("shake"), 300);
+        setHp(e.hp_after, false);
+        pill(e.hypothesis_id, "Hit · -" + e.damage, "hit");
+      }, 350);
+      log("[hit] " + e.hypothesis_id + "  -" + e.damage + "  hp " + e.hp_after, "err");
+      break;
+    case "miss":
+      projectile(e.hypothesis_id, false);
+      pill(e.hypothesis_id, "Missed", "missed");
+      log("[miss] " + e.hypothesis_id + "  " + e.reason, "sys");
+      break;
+    case "round_over":
+      banner("Round over");
+      ticker("Round over: " + e.launched + " launched, " + e.landed + " landed");
+      log("[round 1] launched " + e.launched + "  landed " + e.landed + "  missed " + e.missed + "  hp " + e.hp, "sys");
+      $("fixBtn").disabled = false;
+      break;
+    case "fix_start":
+      banner("Round 2");
+      Object.keys(hyp).forEach(id => pill(id, "Re-running", "running"));
+      log("$ codex exec --fix", "sys");
+      break;
+    case "fix_diff":
+      e.files.forEach(f => log("  " + f.path + "   " + (f.summary || ""), "sys"));
+      break;
+    case "fix_result":
+      log("[suite] " + e.suite_passed + " passed, " + e.suite_failed + " failed", "sys");
+      log("[exploits] " + e.exploits_blocked + " failed, " + e.exploits_still_landed + " passed  — failed = blocked", "sys");
+      break;
+    case "fix_rejected":
+      log("[fix rejected] broke: " + (e.failing_tests || []).join(", "), "err");
+      break;
+    case "blocked":
+      pill(e.hypothesis_id, "Blocked", "blocked");
+      setHp(e.hp_after, true);
+      break;
+    case "still_landed":
+      pill(e.hypothesis_id, "Still landed", "still");
+      break;
+    case "final":
+      showVictory(e);
+      banner(e.result === "survived" ? "PR survived" : "Knocked out", 1400);
+      loadLeaderboard();
+      break;
+    case "error":
+      log("[error:" + e.stage + "] " + e.message, "err");
+      ticker("error in " + e.stage);
+      break;
+    default:
+      log(JSON.stringify(e));   // unknown types are log lines, never an error
+  }
+}
+
+function showVictory(e){
+  $("controls").style.display = "none";
+  $("victory").classList.add("on");
+  $("victoryTitle").textContent = e.result === "survived" ? "PR survived" : "Knocked out";
+  $("vLaunched").textContent = e.launched;
+  $("vR1").textContent = e.landed_r1;
+  $("vR2").textContent = e.landed_r2;
+  $("vSuite").textContent = e.suite_passed;
+  $("vFiles").textContent = e.files_changed;
+  if (sawHit) loadStripe();
+}
+
+async function loadStripe(){
+  try{
+    const r = await fetch("/arena/" + arenaId + "/stripe");
+    const d = await r.json();
+    $("cutin").textContent = d.available
+      ? "Stripe test mode · " + d.payment_intent + " · " + d.refunds.length + " refund(s): " +
+        d.refunds.map(x => x.id + " " + (x.amount / 100).toFixed(2)).join(", ")
+      : "";
+  }catch(_){}
+}
+
+async function loadLeaderboard(){
+  try{
+    const d = await (await fetch("/leaderboard")).json();
+    $("streak").textContent = "🔥 " + d.streak;
+    $("prBoard").innerHTML = d.prs.length ? d.prs.map(r =>
+      "<tr><td>" + r.rank + "</td><td>#" + r.pr + " " + (r.title || "") +
+      "</td><td class='res-" + r.result + "'>" +
+      (r.result === "survived" ? "Survived" : "Knocked out") +
+      "</td><td>" + r.health + "</td></tr>").join("")
+      : "<tr><td colspan='4' style='color:var(--dim)'>no finished runs yet</td></tr>";
+    $("atkBoard").innerHTML = d.attackers.length ? d.attackers.map(a =>
+      "<tr><td>" + (LABEL[a.attacker] || a.attacker) + "</td><td>" + a.hits + " / " + a.swings +
+      "</td><td>" + Math.round(a.accuracy * 100) + "%</td></tr>").join("")
+      : "<tr><td colspan='3' style='color:var(--dim)'>—</td></tr>";
+  }catch(_){}
+}
+
+function connect(id){
+  arenaId = id;
+  if (es) es.close();
+  es = new EventSource("/arena/" + id + "/events");
+  es.onmessage = (m) => { try { handle(JSON.parse(m.data)); } catch(_){} };
+  es.onerror = () => { /* the stream closes on final; nothing to report */ };
+}
+function resetView(){
+  $("log").innerHTML = ""; $("attackers").innerHTML = "";
+  $("victory").classList.remove("on"); $("controls").style.display = "flex";
+  $("replayTag").style.display = "none"; $("fixBtn").disabled = true;
+  $("cutin").textContent = "";
+}
+
+$("enterBtn").onclick = async () => {
+  const pr_url = $("prUrl").value.trim();
+  if (!pr_url) return;
+  resetView();
+  const r = await fetch("/arena", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({pr_url})});
+  if (!r.ok) { log("[error] " + (await r.text()), "err"); return; }
+  connect((await r.json()).arena_id);
+};
+$("fixBtn").onclick = async () => {
+  $("fixBtn").disabled = true;
+  await fetch("/arena/" + arenaId + "/fix", {method:"POST"});
+};
+$("replayBtn").onclick = async () => {
+  resetView();
+  const r = await fetch("/arena/replay", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({})});
+  if (!r.ok) { log("[error] no cached run — run scripts/make_cache.py first", "err"); return; }
+  connect((await r.json()).arena_id);
+};
+$("againBtn").onclick = () => { resetView(); $("stage").classList.remove("on"); };
+$("diffBtn").onclick = () => { if (prUrlSeen) window.open(prUrlSeen + "/files", "_blank"); };
+$("postBtn").onclick = () => log("[post review] PRD 6.6 — only after M3", "sys");
+
+loadLeaderboard();
+</script>
+</body>
+</html>
